@@ -38,7 +38,7 @@ python _utils/recipe_style_review.py --workspace . --summary --output .vivid/sou
 
 - 全图集由 [入口](../ENTRYPOINT.md) 和 [路由合同](router-contract.md) 分类；执行非空路由后按 FIGURE_MANIFEST 清点。验证器位于 `<RES>/scripts/validate_figure_manifest.py`，不假设它在 `_utils/`。
 - FIGURE_MANIFEST 与已有计划共同确定数量、来源和输出；不截断清单后对账，不按关键词计数替代逐项核对。图型重复支持一致比较，没有固定次数配额。
-- 若工作区有 `facts.json` 与 `skills/shared-scripts/facts_audit.py`，按其CLI核对图标签、实体、单位及来源；不存在时不声称已审计。
+- 若工作区有 `facts.json` 与 `_utils/facts_audit.py`（或 `skills/shared-scripts/facts_audit.py`），按其CLI核对图标签、实体、单位及来源；不存在时不声称已审计。
 - 表格和论文引用读取 [表格与图注](figure-tables-and-captions.md)。仅图件任务不生成论文、LaTeX引用或额外表格。
 - 场景与确定性结构图交给各自路由，不能用结构图替代缺失的数据结果，也不因数据图任务强制增加场景图。
 

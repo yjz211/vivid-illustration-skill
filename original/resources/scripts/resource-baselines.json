@@ -21,32 +21,14 @@
   "tpl_roadmap.html": [
     "d8d9fe2d82d72a9be9c0f76f58940e1c364e07f89660b8ee1bbae2ba8fe59fe9"
   ],
-  "ai_disclosure_rules.md": [
-    "9c23ab27cec24d2cae2789cc1bdcfffc4279492ae152d6ea9ec38f3a4be88fdb",
-    "1b4bab0c7916cdb0bf4c99ba94e8d0d0217690d6cd8ca0bc2ce25eea7edce0b9"
-  ],
   "audit_final_figure_size.py": [
     "6c91fbeddd2ef667791a52d852c4cdf5eacc4285e141991bc09562810379aeee"
   ],
   "bib_authenticity_check.py": [
     "f2906c8b8db6294169d05be706fdaa70bdb76981c3f16e1a9982ad91f1cf46e9"
   ],
-  "capability_audit.py": [
-    "73f07596ccd65951bb2595c9c65ed7d3ee2490b5a7a7aae16878123b6bb34248"
-  ],
-  "capability_check.py": [
-    "bfa050f83b3f225459cca5e2708196ffd9e27d4d44cc04f0e5c7dda03bda3193"
-  ],
   "china_provinces.geojson": [
     "99adfeded5223848bbe37a0a12f8023e11ee12161c7800521c27db42fdeac275"
-  ],
-  "claim_code_check.py": [
-    "4d14e17a4c4c58a078b9f659f5bb468b269bf2c16f6f9bd274afc3693c4f3c7b"
-  ],
-  "compile_check.sh": [
-    "ef76dbe3105e1dcedab66be8912e5ceb86ecf2073865debe81ff532c458c0d11",
-    "c0d51b0e5edc20af8741eed5e77a7d16bfd44957744a0f47441acdc169fca75e",
-    "cab70ba8d4e1cce860d97b32e5448a804374dbaf6e02e9005ca5224ae809dd60"
   ],
   "compile_utils.sh": [
     "cb2c106969e1739939ca8c61dfa0ce1be34915000bc6c7e227fa675342e302a6",
@@ -55,21 +37,6 @@
   ],
   "count_subproblems.sh": [
     "2ed25064186383fdeaf95ebd288592771e77dc58a665aedafa4f91c12fcb63ef"
-  ],
-  "cross_problem_check.py": [
-    "75fba952ec0ddfbc20f877d1354c2f888d4629753d5c5a91ae27665c69c4ba7c"
-  ],
-  "data_ingest_check.py": [
-    "8fd7e50af941586524d1983da176e31fd5d5242d4fe8bc1143cde3fe88d12fe7"
-  ],
-  "data_profile.py": [
-    "36d2beeda0c5fa153a39adbf5ff38b13a25c6f89f9b7170ddcbba1711644bc10"
-  ],
-  "delivery_audit.py": [
-    "a2d2e247746e1b4e0f37341a7f3f904201542cbc5df665f635c3d1fb8facac39"
-  ],
-  "demo_all_templates.tex": [
-    "fa9b350a3dd9ce55629b54a4ba40d835bf65001ee829bdfbc3633a5d9303f686"
   ],
   "demo_roadmap_competition.tex": [
     "5355b140e3697df1c9ba7e7f13afa2b83064aa7628bb66fa2ed368aae33720f0"
@@ -89,9 +56,6 @@
   "drawio_rules.md": [
     "74e61c2b2d1baf087a529480ddc108b64bd5436d183a5c288050ad2280a5660f",
     "c051de75b8f2206fc89faedef32ae650cef5873e134175999d8c3fa48c4022de"
-  ],
-  "error_prevention.md": [
-    "d73b0028e142fcb9a2fbb86211e340abf08fee6d6e2848cfaae37a137fc924ef"
   ],
   "example_flow.drawio": [
     "bc3364986323bd3b372b0271d05f7c71f52d9629a680e3357cf10ceabe9fa255"
@@ -198,63 +162,11 @@
   "get_recipe.py": [
     "a0dbe1fd4626eadaef4bea6eb4d1ca0b157057a222e5e6d0eae804005ba439e8",
     "7845d9e19f12488e7669ca7853f9715d96b763b3fc0533e8c2457519757659dc",
-    "2e214fd9fe46582cd62bf81302c5b05931d1e2a38a10ce9336ecaf4e22964b19"
-  ],
-  "humanities-english-translation.md": [
-    "40d6e3bee1913cfab162dc234aea0eb34a15ce737eca93181d6497389adfd8d7"
-  ],
-  "humanities-formatting-guide.md": [
-    "203df35bea1d36babf04799cbcbd844f6cc3d97bfd80296940e71ef2663c1f6d"
-  ],
-  "humanities-literature-analysis.md": [
-    "b988a457cbd48008ecef1eaa3199b5e2c2552452f1fd480efd4976e41aeeb6ae"
-  ],
-  "humanities-literature-review.md": [
-    "c9622d95a276e257c9ec6e5b748a36da7d95adbd4a5c6ed29d7e46fc1437ffcf",
-    "8f951cf8280e99f0b60e3e20edabad8afc5ac64ae0ecae5b6828b59ceb7d862e"
-  ],
-  "humanities-material-integration.md": [
-    "050159a2e4231be3447536f4d8d492c62641dd0d312139e66aa93cdc1553ae6c"
-  ],
-  "humanities-platform-guide.md": [
-    "165d068c7002d93ef80ae81900aabc48a64712bef190cd63bc92fb9f9eee18be",
-    "5bd3ed0120cacfc4e496931c2d7ddee5f89b3f470593b15fcc989fe6c176b2f3"
-  ],
-  "humanities-terminology-bilingual.md": [
-    "9773adcc2d009d7a1beb8b7971214d783bbb3ac316a10a8f5ad5e40f6b9b4f91"
-  ],
-  "humanities-text-review.md": [
-    "5e92b08ff0e634fe8a8509030046250f124f37c5b21749f3a4f4dcc6003f4866"
-  ],
-  "humanities-theory-frameworks.md": [
-    "d185351f4309dfe00d5d68f74ee89985b1d79162c4ba6cc115bf1ebc78eb33e2"
-  ],
-  "humanities-writing-templates.md": [
-    "0fcf396038ef9e2baa69fd1bfa929dadbd38bdcba659999a34d9f55bb93b7daf"
-  ],
-  "inject_ai_disclosure.py": [
-    "ac294ad3d3a5b780f4b635d2062c46acc9bb7e830ba1ab3211a79d7181f8d880"
-  ],
-  "leakage_audit.py": [
-    "ac4e15bdf018ec79ba32d47e367b72722ddf110dbd11b2f30f6621d4be4f8574"
-  ],
-  "logic_audit.py": [
-    "ed214c1cede69b06801e1c4d43a47ea5d990c2d9c3afd42d6ec3bcc426fb3bc4"
-  ],
-  "modeling_coverage_check.py": [
-    "49d376b7747d0493451bf844ab202189035673da586b4b8b6066f28361ffb8ca"
-  ],
-  "normalize_cjk_quotes.py": [
-    "276a43e95753a7aa45e00ed57e001c23d7600ffac7992310b10fba9ae8356af5"
-  ],
-  "NOTICE-humanities.md": [
-    "d58e3210d289211b8f7979004fd372580006ebccbaeec0fd941b75550e0b9b0d"
+    "2e214fd9fe46582cd62bf81302c5b05931d1e2a38a10ce9336ecaf4e22964b19",
+    "b399bf34c16afa7c43beb149c6072480c427ebed559929897fc4839c5d2808c4"
   ],
   "NotoSansSC-Regular.ttf": [
     "ae82f4e2a55e1316a55bcc1d05e9555ce08d8bda07e893b486896b626fd852ff"
-  ],
-  "paper_claim_check.py": [
-    "fb87405e343e35fb5da4382b314368c820ef8f3e852105ffb19fad7f916e7aec"
   ],
   "plot_utils.py": [
     "d1444782f69982b17f1857217c2044044b185b213ca1929229eade21a1f86a91",
@@ -265,7 +177,9 @@
     "56225470474307c026c1c2dbf837e2a09864ad0a1ecd7a3698825df402d71991",
     "8296b5313a6430cd087a87a0bfb12cfee6d7a617a6adac021098fecf0aaca818",
     "44fa7d7c11d0d374bd43486e27e453b590653d35769e071ab2c1946ff2e8ac35",
-    "7a2373adbb2d67b80e6a56e41d217869e6df03a3fd83a836cc815c5b4bab95b5"
+    "7a2373adbb2d67b80e6a56e41d217869e6df03a3fd83a836cc815c5b4bab95b5",
+    "0478f951ab2fa822d49fde73941d75931d0113dc69306ee43b159c12c1354032",
+    "0e649a7bbeb39ad879824e11c623b390bf0ae102368f428cadfddd019a93bdba"
   ],
   "recipe_audit.py": [
     "c429f994f2749c3727ec1e5a02ddc69a5ff8f681d0fdc0eac1c614b329c250b1"
@@ -368,7 +282,8 @@
   ],
   "template_sources.py": [
     "1da7064701d96e110ba6026a6b32dd0335b031bb9faf9b81384baf6e98c61734",
-    "86019fa082e4de8a207a6a42b541318e164863273402779f04cfda2c0e2ff234"
+    "86019fa082e4de8a207a6a42b541318e164863273402779f04cfda2c0e2ff234",
+    "2c3cbcfd24b45ed771436d26a2fed21971b181b95348304bb7c38de53c944885"
   ],
   "tikz_layout_templates.md": [
     "9967b2287ed8552424cfeb2801e933a015f17342773594deb27eb88e9beaf5a2",

@@ -95,8 +95,9 @@ def main():
     for folder in (workspace / "_utils", workspace / "skills/shared-scripts"):
         for filename, expected in routing_baseline.items():
             existing = folder / filename
-            if existing.is_file() and sha256(existing) == expected:
-                shutil.copy2(assets / "shared-scripts" / filename, existing)
+            src_file = assets / "shared-scripts" / filename
+            if existing.is_file() and src_file.is_file() and sha256(existing) == expected:
+                shutil.copy2(src_file, existing)
     # Refresh recognized pre-preservation helpers; keep user edits.
     layout_helper_baselines = ["f8bd00832d65a4982f12510a2f097dbabd03b851102a7c6db6fbb3a3d8c2af4f","4fe20ca0f1439a218e5c5ccdb959f8bc295b9e45e107673562b3e3779afcff49","9f47314d5045aad5dfa0863d836b86124aacf5cb90e93cc3c808324bf469aad7"]
     for folder in (workspace / "_utils", workspace / "skills/shared-scripts"):
@@ -105,19 +106,18 @@ def main():
             shutil.copy2(assets / "shared-scripts/plot_utils.py", existing)
     profile = detect_profile(workspace) if args.profile == "auto" else args.profile
 
-    shared_project = workspace / "skills/shared-scripts"
     utils = workspace / "_utils"
     templates = workspace / "_templates"
 
-    copied_shared, skipped_shared = copy_tree_files(
-        assets / "shared-scripts", shared_project, args.force
-    )
     copied_utils, skipped_utils = copy_tree_files(
         assets / "shared-scripts", utils, args.force
     )
-    copied_templates, skipped_templates = copy_tree_files(
-        assets / "html-templates", templates, args.force
-    )
+    if args.capability in ("all", "html", "paper-figure-html"):
+        copied_templates, skipped_templates = copy_tree_files(
+            assets / "html-templates", templates, args.force
+        )
+    else:
+        copied_templates, skipped_templates = 0, 0
 
     runtime = resolve()
     metadata = {
@@ -128,12 +128,11 @@ def main():
         "runtime_skill": str(root),
         "paths": {
             **runtime,
-            "shared_scripts": str(shared_project),
+            "shared_scripts": str(utils),
             "utils": str(utils),
             "templates": str(templates),
         },
         "injection": {
-            "shared": {"copied": copied_shared, "preserved": skipped_shared},
             "utils": {"copied": copied_utils, "preserved": skipped_utils},
             "templates": {"copied": copied_templates, "preserved": skipped_templates},
         },

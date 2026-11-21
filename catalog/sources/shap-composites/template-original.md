@@ -7,7 +7,7 @@
 | `template.shap_dependence` | `dependence` | 哪些因素重要，特征值与模型归因如何变化？ |
 | `template.shap_contribution` | `contribution` | 哪些变量及变量类别贡献较大，归因方向如何分布？ |
 
-选定后直接使用 [完整脚本](plot_shap_composites.py) 的对应模式，保留其专用布局。默认读取当前Vivid项目配色；`--reference-colors`明确选用截图近似色，不影响其他模板。连续颜色表示各特征内部的最小值到最大值，不能跨变量比较原始单位；常数列显示中间色。字体、透明散点、方形标记、双层环和双横轴均由模板保留。
+选定后直接使用 [完整脚本](../../../templates/shap-composites/plot_shap_composites.py) 的对应模式，保留其专用布局。默认读取当前Vivid项目配色；`--reference-colors`明确选用截图近似色，不影响其他模板。连续颜色表示各特征内部的最小值到最大值，不能跨变量比较原始单位；常数列显示中间色。字体、透明散点、方形标记、双层环和双横轴均由模板保留。
 
 ## 输入
 

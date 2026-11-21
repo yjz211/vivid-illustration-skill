@@ -1,6 +1,17 @@
 __pycache__/
 *.py[cod]
+.pytest_cache/
+.venv/
+venv/
+.env
+.env.*
+*.log
 .DS_Store
+Thumbs.db
 .vivid/
 _utils/
+_templates/
 figures/
+tmp/
+output/
+artifacts/
