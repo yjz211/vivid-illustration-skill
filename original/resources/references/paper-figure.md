@@ -1,45 +1,30 @@
 # 数据图执行
 
-仅处理当前要求的数据图；选择模板、源码适配和审图分别见包入口链接。工具执行位置是任务工作区；`<RES>` 为 skill 的 `original/resources`。
+处理完整图集或工作流路由中的 `DATA/TABLE` 项；单图选型、源码保真与环境细节复用包根目录规范。工具在任务工作区 `<WORKSPACE>` 执行，`<RES>` 为 `<SKILL>/original/resources`。
 
 ## 初始化与恢复
 
-首次运行 `python "<RES>/scripts/bootstrap.py" --workspace "<WORKSPACE>" --profile modeling-competition --capability paper-figure`，按 `host-adapter.md` 配置语言、输出和项目配色。初始化已完成时复用环境；工具更新时重跑会刷新已知旧副本并保留用户改动。使用 `.vivid/runtime.json` 中的 Python/Bash 路径。
+首次运行 `python "<RES>/scripts/bootstrap.py" --workspace "<WORKSPACE>" --profile modeling-competition --capability paper-figure`，使用 `.vivid/runtime.json` 中的 Python/Bash 路径，并按 [执行环境](../../../host-adapter.md) 读取语言、输出格式与项目配色。已初始化环境直接复用；重复运行保留用户修改并刷新已知工具副本。恢复任务时核对现有输入、源码、输出与清单，仅补齐缺失项或修复有问题图件，不无故重画。
 
-恢复时核对现有输入、源码、输出及任务清单。保留有效结果；补缺失项，修复有具体问题或用户要求改变的图，不无故重画。来源工具遇到已有适配会保留，未登记的同名文件需先核对，不能强制覆盖。
+## 选型、适配与尺寸
 
-## 数据与适配
-
-- 明确观测单位、配对/分组、单位、缺失与统计区间的含义。绘图数值来自输入或真实计算；演示随机数和演示统计量必须替换。不能补造阈值、显著性或不确定性来凑模板。
-- 按 `template-fidelity.md` 将完整源码落盘，再在文件中改数据载入、计算、绑定、标签及必要布局。公共数据处理可放辅助模块；主绘图结构保留在对应底稿中。
-- 数据需要额外组别、站点、不同单位或长标签时，可扩展画布、复用模板结构增加面板或调整图例，避免漏数据和混单位。密度/区间不适合当前样本时按统计含义适配，并保留能成立的信息层。
-- 项目颜色通过 `setup_style()` 后的 `pu.PALETTE` / `pu.COLORS` 读取。完整用色摘要见 [配方用色](../../fragments/original-color-usage.md)；连续色阶跟随语义及原配方归一化。具体配色数值唯一维护在 `palettes.json`。
-- 尺寸按 [预计算](../../fragments/original-size-preflight.md) 处理，保留模板字体/图层关系。用户未指定上页尺寸时以实际交付用途判断，不把论文示例宽度当全库常量。
+- 模板检索与实图对照按 [数据图子 Skill](../../../channels/vivid-figure-skill/SKILL.md) 与 [数据与模板选择](../../../figure-selection.md) 执行；工作脚本落盘、真实数据原位替换与尺寸预计算（`上页字号 = 代码字号 × 引用宽 ÷ 原生宽`）遵循 [源码底稿与保真](../../../template-fidelity.md)。
+- 项目颜色在 `setup_style()` 后从 `pu.PALETTE`、`pu.COLORS` 及 `palette_cmap` 读取，规则见 [配色选择](../../../color-selection.md)（唯一色值表为 `palettes.json`）。所有数值与统计区间须来自真实输入或计算，不补造阈值、显著性或不确定性。
 
 ## 运行与检查
 
-每张交付图有可重跑的脚本，可共享数据处理。推荐在工作区执行 `python -m figures.gen_fig_name`，使 `_utils` 等工作区导入可用；无需改写模板开头来解决路径。输出按要求使用 PNG/PDF 等；PNG 通常300 DPI以上，保留实际可读性，矢量PDF不以DPI代表矢量质量。
+每张数据图保存可重跑源脚本（公共数据处理可放入辅助模块），推荐在工作区执行 `python -m figures.gen_fig_name`。PNG 通常不低于 300 DPI，矢量交付以 PDF 为主。批量并行前先单进程完成工具与字体缓存初始化，并逐脚本独立核对退出码与预期输出文件。
 
-绘图前或首次运行检查时执行：
+出图后执行跨平台质量与底稿检查（POSIX 环境兼容 `bash _utils/figure_check.sh`）：
 
-```text
-python _utils/recipe_style_review.py --workspace . --summary --output .vivid/source-review.json
+```bash
+python _utils/figure_check.py
 ```
 
-`--candidate figures/gen_fig_name.py` 可仅检查修复的一张图。来源缺失/不匹配、语法或运行失败应修复；布局、注释、颜色与图层变化是需结合数据判断的提示。详细 diff 保存到 JSON，按需读取，无需逐条长篇自评。
+工具检查语法、样式/色板规范与导出调用，并自动运行 `_utils/recipe_style_review.py` 生成 `.vivid/source-review.json` 差异摘要（单图检查可传 `--candidate figures/gen_fig_name.py`）；完整组合模板遵循各自 `TEMPLATE.md` 的专用 CLI 与检查说明。随后按 [检查与修复](../../review-policy.md) 查看实际成图，静态零提示不替代视觉与数据核对。
 
-执行脚本并核对该脚本自己的预期输出；退出0或别的图文件存在不能证明本图成功。批量并行时各自记录退出码和输出，先单进程初始化工具/字体缓存，避免并发写入。
+## 完整图集对账与论文引用（仅相应任务加载）
 
-`bash _utils/figure_check.sh` 集成已有工程检查与登记源码比较。完整组合模板遵循专用CLI及检查说明，通用检查中不适用于其实现的要求不能覆盖模板约定。
-
-随后按 [检查与修复](../../review-policy.md) 查看实际图件，核对源码差异与卡片要点，必要时修复。未经查看不声称审图通过；静态工具没有提示也不代表数据、布局或视觉正确。
-
-## 论文及完整图集（仅相应任务加载）
-
-- 全图集由 [入口](../ENTRYPOINT.md) 和 [路由合同](router-contract.md) 分类；执行非空路由后按 FIGURE_MANIFEST 清点。验证器位于 `<RES>/scripts/validate_figure_manifest.py`，不假设它在 `_utils/`。
-- FIGURE_MANIFEST 与已有计划共同确定数量、来源和输出；不截断清单后对账，不按关键词计数替代逐项核对。图型重复支持一致比较，没有固定次数配额。
-- 若工作区有 `facts.json` 与 `_utils/facts_audit.py`（或 `skills/shared-scripts/facts_audit.py`），按其CLI核对图标签、实体、单位及来源；不存在时不声称已审计。
-- 表格和论文引用读取 [表格与图注](figure-tables-and-captions.md)。仅图件任务不生成论文、LaTeX引用或额外表格。
-- 场景与确定性结构图交给各自路由，不能用结构图替代缺失的数据结果，也不因数据图任务强制增加场景图。
-
-交付输入来源、脚本与所要求的图件；简述必要适配和仍未解决的问题。工作文件集中保存在本次工作区。
+- 全图集由 [绘图入口](../ENTRYPOINT.md) 与 [路由合同](router-contract.md) 分类，执行后逐项对账 `FIGURE_MANIFEST`（验证器为 `<RES>/scripts/validate_figure_manifest.py`），不截断清单，不用结构图替代缺失的数据结果。
+- 若工作区存在 `facts.json` 与 `_utils/facts_audit.py`（或 `skills/shared-scripts/facts_audit.py`），按其 CLI 核对图标签、实体、单位与来源；不存在时不声称已审计。
+- 涉及论文表格、图注与页面尺寸规范时，读取 [表格与图注](figure-tables-and-captions.md) 与 [版面门禁](paper-layout-gate.md)。仅图件任务交付输入来源、脚本与所要求的图件后结束，不生成论文或额外表格。

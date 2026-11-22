@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""学术级图表工具库 — 统一风格，绘图助手 自由调用。
+"""学术级图表工具库 — 统一风格、配色、字体与多语言导出运行时。
 
-使用方式：
-    from _utils.plot_utils import setup_style, heatmap, forest_plot, trend_plot
+使用方式（工作脚本应通过 `_utils/get_recipe.py` 从模板配方准备，而非调用旧黑盒包装函数）：
+    from _utils.plot_utils import setup_style, save_fig, PALETTE, COLORS, _lighten
     setup_style()  # 初始化学术风格
-    heatmap(corr_matrix, output='figures/fig_heatmap.pdf')
+    ...
+    save_fig(fig, 'figures/fig_result.pdf')
 """
 import os
 import operator
@@ -336,42 +337,6 @@ def setup_style(palette='auto', language=None, font_family=None):
     # Preserve author layout: do not install automatic savefig mutation hooks.
 
 
-def _hook_savefig(plt):
-    """Hook plt.savefig 和 Figure.savefig，在保存前强制修复子图尺寸和文字重叠。"""
-    import matplotlib.figure
-
-    if getattr(matplotlib.figure.Figure, '_overlap_hooked', False):
-        return  # 已经 hook 过了
-
-    _original_savefig = matplotlib.figure.Figure.savefig
-
-    def _hooked_savefig(self, *args, **kwargs):
-        # ★ 强制修复子图尺寸（最高优先级，检测到问题必须修复）
-        try:
-            _guard_subplot_size(self)
-        except Exception:
-            pass
-        # 防遮挡修复
-        try:
-            _auto_fix_overlaps(self)
-        except Exception:
-            pass
-        # ★ 防遮挡可能又破坏了布局，再强制检查一次
-        try:
-            _guard_subplot_size(self)
-        except Exception:
-            pass
-        # ★ 最后一步：确保旋转的刻度标签（斜排长中文）不被画布边缘裁掉
-        try:
-            _ensure_ticklabels_visible(self)
-        except Exception:
-            pass
-        return _original_savefig(self, *args, **kwargs)
-
-    matplotlib.figure.Figure.savefig = _hooked_savefig
-    matplotlib.figure.Figure._overlap_hooked = True
-
-
 def _has_3d_axes(fig):
     """检测 figure 是否含 3D 轴（Axes3D）。
 
@@ -403,176 +368,6 @@ def _lighten(hex_color, amount=0.4):
 PALETTE_LIGHT = _Palette(_lighten(c, 0.4) for c in PALETTE)
 COLORS["bg_fill"] = _lighten(PALETTE[0], 0.8)
 COLORS["bg_fill2"] = _lighten(PALETTE[1], 0.8)
-
-
-def _pull_back_outside_transaxes_text(fig):
-    """无条件检测：ax.text(transAxes, y<0 or y>1) 这种 axes 外子图标题，
-    转换成 fig.text(figure coords) 钉在画布底部/顶部，且改写到 figure 坐标系。
-    
-    理由：science 样式默认 savefig.bbox='tight' 会把 axes 外文字算进 PDF mediabox，
-    导致页面被异常拉长。即便我们已经全局关掉 savefig.bbox='tight'，AI 代码仍可能
-    显式传 bbox_inches='tight'。把这种文本拉到 axes 内或转 figure 坐标都能解决。
-    """
-    try:
-        axes = [ax for ax in fig.get_axes() if ax.get_visible()]
-        for ax in axes:
-            ax_pos = ax.get_position()
-            for t in list(ax.texts):
-                try:
-                    if t.get_transform() is not ax.transAxes:
-                        continue
-                    x, y = t.get_position()
-                    if y > 1.0:
-                        # 拉回 axes 内顶端
-                        t.set_position((x, 0.97))
-                        t.set_va('top')
-                    elif y < 0.0:
-                        # 拉回 axes 内底端
-                        t.set_position((x, 0.03))
-                        t.set_va('bottom')
-                except Exception:
-                    pass
-    except Exception:
-        pass
-
-
-def _auto_shrink_figsize_if_sparse(fig):
-    """检测所有 axes 占 figure 总面积比例，过低时强制重排 + 收缩 figsize。
-    
-    场景：AI 写了 figsize=(10, 12) 但实际只画 2 个小 panel 在底部/顶部，
-    剩下大块白边 → 用户看到的就是"图很小，整页白"。
-    
-    三阶段策略：
-    1. subplots_adjust（对 plt.subplots / add_subplot 创建的 axes 有效）
-    2. ★ 直接 set_position 强制重排（对 add_axes / GridSpec 手动布局也有效）
-       — 按原始相对位置等比例缩放到撑满 figure 80%
-       — 同时把 ax.text(transAxes, y>1.0) 反模式拉回 axes 内部
-    3. 仍稀疏 → 收缩 figsize
-    
-    副作用：触发任一阶段修复时，在 fig 上设 `_layout_fixed_by_plot_utils=True`，
-    让 _save 用 bbox_inches=None 防止 transAxes 高位标注异常扩展 PDF mediabox。
-    """
-    try:
-        # ★ 3D 轴豁免：等比例重排/收缩 figsize 会破坏 3D 曲面 + colorbar 布局
-        if _has_3d_axes(fig):
-            return
-
-        axes = [ax for ax in fig.get_axes()
-                if ax.get_visible() and not ax.get_label().startswith('_')]
-        if not axes:
-            return
-
-        fig_w, fig_h = fig.get_size_inches()
-        if fig_w <= 0 or fig_h <= 0:
-            return
-
-        def _compute_union():
-            x0_min, y0_min, x1_max, y1_max = 1.0, 1.0, 0.0, 0.0
-            for ax in axes:
-                pos = ax.get_position()
-                x0_min = min(x0_min, pos.x0)
-                y0_min = min(y0_min, pos.y0)
-                x1_max = max(x1_max, pos.x1)
-                y1_max = max(y1_max, pos.y1)
-            return x0_min, y0_min, x1_max, y1_max
-
-        x0_min, y0_min, x1_max, y1_max = _compute_union()
-        if x1_max <= x0_min or y1_max <= y0_min:
-            return
-
-        union_w = x1_max - x0_min
-        union_h = y1_max - y0_min
-        content_ratio = union_w * union_h
-
-        if content_ratio >= 0.50:
-            return  # 占比够，不调
-
-        # ★ 阶段 1：先试 subplots_adjust（对 plt.subplots 创建的 axes 有效）
-        try:
-            fig.subplots_adjust(left=0.10, right=0.96, top=0.93, bottom=0.10,
-                                hspace=0.3, wspace=0.3)
-            x0_min, y0_min, x1_max, y1_max = _compute_union()
-            new_ratio = (x1_max - x0_min) * (y1_max - y0_min)
-            if new_ratio >= 0.50:
-                fig._layout_fixed_by_plot_utils = True
-                return  # 搞定
-        except Exception:
-            pass
-
-        # ★ 阶段 2：subplots_adjust 失效（add_axes / GridSpec 手动布局），
-        #         直接 set_position 强制重排：按原始相对位置等比例缩放撑满
-        # 这是修复 "axes 集中在 figure 一侧（如底部 20%），子图标题被推到顶部" 的关键
-        try:
-            # 重新读 union（subplots_adjust 可能已变化）
-            x0_min, y0_min, x1_max, y1_max = _compute_union()
-            union_w = x1_max - x0_min
-            union_h = y1_max - y0_min
-
-            # 目标：让 union 撑满 figure 的 (0.08-0.94) × (0.10-0.93) 区域
-            target_x0, target_y0 = 0.10, 0.10
-            target_w, target_h = 0.85, 0.82
-
-            # 缩放比例（保持各 axes 相对位置）
-            scale_w = target_w / union_w if union_w > 0.001 else 1.0
-            scale_h = target_h / union_h if union_h > 0.001 else 1.0
-            # 不要过度放大（>6x 容易让 add_axes 手动布局变形）
-            scale_w = min(scale_w, 6.0)
-            scale_h = min(scale_h, 6.0)
-
-            for ax in axes:
-                pos = ax.get_position()
-                # 相对 union 的偏移
-                rel_x = (pos.x0 - x0_min) / max(union_w, 0.001)
-                rel_y = (pos.y0 - y0_min) / max(union_h, 0.001)
-                # 新位置：把整个 union 投影到 target 区域
-                new_x0 = target_x0 + rel_x * target_w
-                new_y0 = target_y0 + rel_y * target_h
-                new_w = pos.width * scale_w
-                new_h = pos.height * scale_h
-                # 边界保护
-                new_x0 = max(0.02, min(new_x0, 0.95))
-                new_y0 = max(0.02, min(new_y0, 0.95))
-                new_w = max(0.05, min(new_w, 1.0 - new_x0 - 0.02))
-                new_h = max(0.05, min(new_h, 1.0 - new_y0 - 0.02))
-                ax.set_position([new_x0, new_y0, new_w, new_h])
-
-            # ★ 把 ax.text(transAxes, y>1.0) 反模式拉回 axes 内部
-            # 这种 "axes 外标注" 会被 bbox_inches='tight' 算进 PDF mediabox，
-            # 导致页面被异常拉长（"标题在顶部、图在底部、中间一大片白"的根因）
-            for ax in axes:
-                for t in list(ax.texts):
-                    try:
-                        if t.get_transform() is ax.transAxes:
-                            x, y = t.get_position()
-                            if y > 1.0:
-                                t.set_position((x, 0.95))
-                                t.set_va('top')
-                            elif y < 0.0:
-                                t.set_position((x, 0.05))
-                                t.set_va('bottom')
-                    except Exception:
-                        pass
-
-            x0_min, y0_min, x1_max, y1_max = _compute_union()
-            new_ratio = (x1_max - x0_min) * (y1_max - y0_min)
-            if new_ratio >= 0.50:
-                fig._layout_fixed_by_plot_utils = True
-                return
-        except Exception:
-            pass
-
-        # ★ 阶段 3：仍稀疏 → 收缩 figsize
-        new_w_inches = max(3.5, (x1_max - x0_min) * fig_w * 1.18)
-        new_h_inches = max(2.5, (y1_max - y0_min) * fig_h * 1.18)
-        new_w_inches = min(new_w_inches, fig_w)
-        new_h_inches = min(new_h_inches, fig_h)
-        if new_w_inches > fig_w * 0.95 and new_h_inches > fig_h * 0.95:
-            return
-        fig.set_size_inches(new_w_inches, new_h_inches)
-        fig._layout_fixed_by_plot_utils = True
-    except Exception:
-        # 任何异常都静默跳过，不能让兜底逻辑搞坏正常保图
-        pass
 
 
 def _warn_if_wasted_margin(fig, output):
@@ -746,7 +541,52 @@ def _data_points_in_data_space(ax, is3d):
         return None
 
 
-def _save(fig, output):
+_ENGLISH_LABELS_CACHE = (None, None, {})
+
+
+def _merged_english_labels(cfg=None):
+    """Load english-labels.json beside plot_utils.py and merge config english_labels."""
+    global _ENGLISH_LABELS_CACHE
+    import json
+    from pathlib import Path
+
+    dict_path = Path(__file__).resolve().with_name('english-labels.json')
+    base = {}
+    if dict_path.is_file():
+        mtime = dict_path.stat().st_mtime_ns
+        if _ENGLISH_LABELS_CACHE[0] == str(dict_path) and _ENGLISH_LABELS_CACHE[1] == mtime:
+            base = dict(_ENGLISH_LABELS_CACHE[2])
+        else:
+            loaded = json.loads(dict_path.read_text(encoding='utf-8'))
+            if isinstance(loaded, dict):
+                _ENGLISH_LABELS_CACHE = (str(dict_path), mtime, loaded)
+                base = dict(loaded)
+    if cfg is None:
+        cfg = vc.load_config()
+    extra = cfg.get('english_labels') if isinstance(cfg, dict) else None
+    if isinstance(extra, dict):
+        base.update(extra)
+    return base
+
+
+def _normalize_formats(formats, supported, caller):
+    if isinstance(formats, str):
+        items = [formats]
+    else:
+        items = list(formats)
+    if not items:
+        raise ValueError(f"{caller}: formats cannot be empty")
+    normalized = []
+    for item in items:
+        fmt = str(item).strip().lstrip('.').lower()
+        if not fmt or fmt not in supported:
+            raise ValueError(f"{caller}: unsupported format {item!r}")
+        if fmt not in normalized:
+            normalized.append(fmt)
+    return normalized
+
+
+def _save(fig, output, formats=None):
     """Save without changing author layout, labels, axes, or canvas size."""
     # ★ 空 / 仅空白 路径直接拒绝（避免兜底成隐藏文件 ".pdf"）
     if not output or not str(output).strip():
@@ -760,25 +600,85 @@ def _save(fig, output):
     _maybe_ext = _basename.rsplit('.', 1)[-1].lower() if '.' in _basename else ''
     if _maybe_ext in _SUPPORTED_FMTS:
         _ext = _maybe_ext
+        _stem = output[:-len(_ext) - 1]
     else:
         # 无扩展名 / 不是图像格式（如 'fig.v2'）→ 追加 .pdf
         _ext = 'pdf'
+        _stem = output
         output = output + '.pdf'
-    _save_kwargs = {'format': _ext, 'pad_inches': 0.15}
-    # ★ 默认不用 bbox_inches='tight' —— 防止 ax.text(transAxes, y<0 or y>1) 这种
-    # axes 外标注让 tight 包围盒爆炸（用户实测过 1496×23966 px 超长条 PNG）。
-    # Preserve the requested canvas size; layout is owned by the generator.
-    _save_kwargs['bbox_inches'] = None
-    if _ext in ('png', 'jpg', 'jpeg'):
-        _save_kwargs['dpi'] = 350  # 防中文标签糊（与 docx_export PDF→PNG 兜底链路一致）
-    apply_figure_fonts(fig, vc.load_config()['language'])
+    _req_fmts = _normalize_formats(formats, _SUPPORTED_FMTS, 'save_fig') if formats is not None else None
+    _cfg = vc.load_config()
+    _lang = vc.normalize_language(_cfg.get('language', 'zh'))
+    if _lang == 'en' and not getattr(fig, '_vivid_localized_en', False):
+        localize_figure(fig, language='en', labels=_merged_english_labels(_cfg))
+        fig._vivid_localized_en = True
+    apply_figure_fonts(fig, _lang)
     # ★ 成品自检：静态闸扫不出的"边距被撑爆"，在这里实测拦一道（只提示，不阻塞）
     _warn_if_wasted_margin(fig, output)
     # ★ 成品自检：数据被轴范围裁掉（坐标系约定写错，静态扫不出来），同样实测拦一道
     _warn_if_data_clipped(fig, output)
-    fig.savefig(output, **_save_kwargs)
-    _get_plt().close(fig)
-    print(f'Saved: {output}')
+    if _req_fmts is None:
+        _save_kwargs = {'format': _ext, 'pad_inches': 0.15, 'bbox_inches': None}
+        if _ext in ('png', 'jpg', 'jpeg'):
+            _save_kwargs['dpi'] = 350  # 防中文标签糊（与 docx_export PDF→PNG 兜底链路一致）
+        fig.savefig(output, **_save_kwargs)
+        _get_plt().close(fig)
+        print(f'Saved: {output}')
+    else:
+        targets = []
+        for _fmt in _req_fmts:
+            _target = f'{_stem}.{_fmt}'
+            _save_kwargs = {'format': _fmt, 'pad_inches': 0.15, 'bbox_inches': None}
+            if _fmt in ('png', 'jpg', 'jpeg'):
+                _save_kwargs['dpi'] = 350
+            fig.savefig(_target, **_save_kwargs)
+            targets.append(_target)
+        _get_plt().close(fig)
+        for _target in targets:
+            print(f'Saved: {_target}')
+
+
+def save_plotly(fig, output, formats=None, scale=3):
+    """Save a Plotly figure with project display language and font policy."""
+    if not output or not str(output).strip():
+        raise ValueError("save_plotly: output path is empty")
+    output = str(output)
+    os.makedirs(os.path.dirname(output) if os.path.dirname(output) else '.', exist_ok=True)
+    _PLOTLY_FMTS = ('pdf', 'png', 'svg', 'html')
+    _basename = os.path.basename(output)
+    _maybe_ext = _basename.rsplit('.', 1)[-1].lower() if '.' in _basename else ''
+    if _maybe_ext in _PLOTLY_FMTS:
+        _ext = _maybe_ext
+        _stem = output[:-len(_ext) - 1]
+    else:
+        _ext = 'pdf'
+        _stem = output
+        output = output + '.pdf'
+    if formats is None:
+        _targets = [(output, _ext)]
+    else:
+        _req_fmts = _normalize_formats(formats, _PLOTLY_FMTS, 'save_plotly')
+        _targets = [(f'{_stem}.{_fmt}', _fmt) for _fmt in _req_fmts]
+    cfg = vc.load_config()
+    lang = vc.normalize_language(cfg.get('language', 'zh'))
+    if lang == 'en':
+        if not getattr(fig, '_vivid_localized_en', False):
+            try:
+                from .figure_language import localize_plotly
+            except ImportError:
+                from figure_language import localize_plotly
+            localize_plotly(fig, language='en', labels=_merged_english_labels(cfg))
+            fig._vivid_localized_en = True
+        else:
+            apply_figure_fonts(fig, 'en')
+    else:
+        apply_figure_fonts(fig, lang)
+    for target, ext in _targets:
+        if ext == 'html':
+            fig.write_html(target)
+        else:
+            fig.write_image(target, scale=scale if ext == 'png' else 1)
+        print(f'Saved: {target}')
 
 
 def _onscreen_tick_labels(ax, which='both'):
@@ -848,537 +748,6 @@ def _onscreen_tick_labels(ax, which='both'):
     return out
 
 
-def _ensure_ticklabels_visible(fig):
-    """防护：旋转的 x/y 轴刻度标签（尤其斜排的长中文）常伸出 axes 下方/左侧，
-    在 bbox_inches=None（等大裁剪，为防 PDF mediabox 爆炸而刻意采用）下被画布边缘切掉。
-
-    做法：用 renderer 实测每个 axes 的刻度标签像素范围，若标签越过 figure 的
-    下边缘/左边缘，就按超出量（换算成 figure 比例 + 安全余量）增大 subplots_adjust
-    的 bottom/left，把标签留白让出来。对 add_axes/GridSpec 等无法 subplots_adjust
-    的手动布局，退化为直接下压/右移 axes 的 position。
-
-    只增不减，幂等安全；测量失败时静默跳过，绝不破坏原图。
-    """
-    # ★ 3D 轴豁免：3D 轴的刻度标签在投影平面上，subplots_adjust/set_position 会挤塌曲面
-    if _has_3d_axes(fig):
-        return
-    try:
-        renderer = fig.canvas.get_renderer()
-    except Exception:
-        try:
-            fig.canvas.draw()
-            renderer = fig.canvas.get_renderer()
-        except Exception:
-            return
-
-    fig_w_px, fig_h_px = fig.get_size_inches() * fig.dpi
-    if fig_w_px <= 0 or fig_h_px <= 0:
-        return
-
-    axes = [ax for ax in fig.get_axes()
-            if ax.get_visible() and not ax.get_label().startswith('_')]
-    if not axes:
-        return
-
-    # 统计所有 axes 的刻度标签超出 figure 下边缘/左边缘的最大像素量
-    overflow_bottom_px = 0.0
-    overflow_left_px = 0.0
-    for ax in axes:
-        # 只统计落在轴范围内的刻度：轴外的"幽灵刻度"（如 log 轴 xlim=[10,2700]
-        # 时残留的 10^0）不会被绘制，却会被误判成越界并撑爆左边距
-        try:
-            labels = _onscreen_tick_labels(ax)
-        except Exception:
-            continue
-        for t in labels:
-            try:
-                bb = t.get_window_extent(renderer=renderer)
-            except Exception:
-                continue
-            # figure 坐标系：y=0 在底部，x=0 在左侧
-            if bb.y0 < 0:
-                overflow_bottom_px = max(overflow_bottom_px, -bb.y0)
-            if bb.x0 < 0:
-                overflow_left_px = max(overflow_left_px, -bb.x0)
-
-    if overflow_bottom_px <= 1 and overflow_left_px <= 1:
-        return  # 没有标签越界，无需处理
-
-    # 换算成 figure 比例，加 1.5% 安全余量
-    extra_bottom = overflow_bottom_px / fig_h_px + 0.015
-    extra_left = overflow_left_px / fig_w_px + 0.015
-
-    sp = fig.subplotpars
-    new_bottom = min(0.45, sp.bottom + extra_bottom)  # 封顶 0.45，防止 axes 被压没
-    new_left = min(0.40, sp.left + extra_left)
-    # ⚠ 撞顶是异常信号：正常图的标签越界量顶多几十像素，需要 40% 图宽当左边距
-    # 说明测量被污染了（历史真实案例：对数轴外的幽灵刻度被算成越界 457px）。
-    # 不静默放过，打一行提示便于定位。
-    if sp.left + extra_left > 0.40 or sp.bottom + extra_bottom > 0.45:
-        print(f"[plot_utils] WARNING 标签越界兜底撞到封顶: "
-              f"left {sp.left:.3f}+{extra_left:.3f} bottom {sp.bottom:.3f}+{extra_bottom:.3f} "
-              f"(越界实测 左{overflow_left_px:.0f}px 下{overflow_bottom_px:.0f}px) "
-              f"—— 若图上出现大片空白，检查是否有轴外刻度/离屏文字污染测量")
-    # 保证 bottom < top、left < right，避免非法布局
-    new_bottom = min(new_bottom, sp.top - 0.15)
-    new_left = min(new_left, sp.right - 0.15)
-
-    applied = False
-    try:
-        fig.subplots_adjust(
-            bottom=max(sp.bottom, new_bottom),
-            left=max(sp.left, new_left),
-        )
-        applied = True
-    except Exception:
-        applied = False
-
-    # subplots_adjust 对手动布局（add_axes/GridSpec）无效时，直接平移+压缩 axes position
-    if not applied or overflow_bottom_px > 2 or overflow_left_px > 2:
-        # 重新实测：subplots_adjust 生效后可能已解决
-        try:
-            fig.canvas.draw()
-            renderer = fig.canvas.get_renderer()
-        except Exception:
-            pass
-        for ax in axes:
-            try:
-                still_bottom = 0.0
-                still_left = 0.0
-                labels = _onscreen_tick_labels(ax)  # 同样过滤轴外幽灵刻度
-                for t in labels:
-                    bb = t.get_window_extent(renderer=renderer)
-                    if bb.y0 < 0:
-                        still_bottom = max(still_bottom, -bb.y0)
-                    if bb.x0 < 0:
-                        still_left = max(still_left, -bb.x0)
-                if still_bottom <= 1 and still_left <= 1:
-                    continue
-                pos = ax.get_position()
-                dy = still_bottom / fig_h_px + 0.01 if still_bottom > 1 else 0.0
-                dx = still_left / fig_w_px + 0.01 if still_left > 1 else 0.0
-                ax.set_position([
-                    pos.x0 + dx,
-                    pos.y0 + dy,
-                    max(0.1, pos.width - dx),
-                    max(0.1, pos.height - dy),
-                ])
-            except Exception:
-                pass
-
-
-def _guard_subplot_size(fig):
-    """防护：检测子图是否被压缩得过小，如果是则强制修复布局。
-    
-    常见原因：subplot margins 过紧、tight_layout(pad) 过大、
-    ax.text(transAxes) 标签被算入空间分配。
-    
-    强制修复策略：检测到问题 → 重置 margins → 重新 tight_layout(pad=0.3) → 再验证。
-    """
-    # ★ 3D 轴豁免：3D 曲面 + 窄 colorbar 会被误判"子图过窄"而挤塌，直接跳过
-    if _has_3d_axes(fig):
-        return
-
-    axes = [ax for ax in fig.get_axes() if ax.get_visible() and not ax.get_label().startswith('_')]
-    if not axes:
-        return
-
-    fig_w, fig_h = fig.get_size_inches()
-    if fig_w <= 0 or fig_h <= 0:
-        return
-
-    def _is_too_small():
-        """检测是否有子图过小。"""
-        for ax in axes:
-            pos = ax.get_position()
-            ax_w_inch = pos.width * fig_w
-            ax_h_inch = pos.height * fig_h
-            # 子图面积小于 1.5 平方英寸 → 肯定有问题
-            if ax_w_inch * ax_h_inch < 1.5:
-                return True
-            # 子图高度小于 1 英寸 → 太扁了
-            if ax_h_inch < 1.0:
-                return True
-            # 子图宽度小于 2 英寸 → 太窄了
-            if ax_w_inch < 2.0:
-                return True
-        return False
-    
-    if not _is_too_small():
-        return
-    
-    # ★ 强制修复第一步：重置 subplot margins
-    n_axes = len(axes)
-    if n_axes == 1:
-        fig.subplots_adjust(left=0.12, right=0.95, top=0.92, bottom=0.12)
-    else:
-        fig.subplots_adjust(left=0.10, right=0.95, top=0.93, bottom=0.10,
-                            hspace=0.3, wspace=0.3)
-    
-    # ★ 强制修复第二步：用小 pad 重新 tight_layout 覆盖之前的大 pad
-    try:
-        fig.tight_layout(pad=0.3)
-    except Exception:
-        pass
-    
-    # ★ 强制修复第三步：如果还是太小，直接放弃 tight_layout，手动设置合理布局
-    if _is_too_small():
-        if n_axes == 1:
-            fig.subplots_adjust(left=0.12, right=0.95, top=0.92, bottom=0.12)
-        elif n_axes <= 4:
-            fig.subplots_adjust(left=0.08, right=0.96, top=0.94, bottom=0.08,
-                                hspace=0.25, wspace=0.25)
-        else:
-            fig.subplots_adjust(left=0.06, right=0.97, top=0.95, bottom=0.06,
-                                hspace=0.2, wspace=0.2)
-
-
-def _clamp_texts_to_axes(ax, texts, renderer):
-    """将超出 axes 边界的文字/标注拉回 axes 内部。
-
-    帕累托图、灵敏度图等场景中，annotate 的 xytext 用硬编码偏移，
-    如果数据点靠近边缘，标注就会超出 axes 区域。
-    此函数检测每个 Text 的 bounding box 是否超出 axes 范围，
-    如果超出就把它拉回来（保留 4px 内边距）。
-    """
-    try:
-        ax_bbox = ax.get_window_extent(renderer=renderer)
-    except Exception:
-        return
-
-    pad = 4  # 像素内边距
-    inv = ax.transData.inverted()
-
-    for t in texts:
-        try:
-            t_bbox = t.get_window_extent(renderer=renderer)
-        except Exception:
-            continue
-
-        dx_px, dy_px = 0.0, 0.0
-
-        # 右边超出
-        if t_bbox.x1 > ax_bbox.x1 - pad:
-            dx_px = ax_bbox.x1 - pad - t_bbox.x1
-        # 左边超出
-        if t_bbox.x0 < ax_bbox.x0 + pad:
-            dx_px = ax_bbox.x0 + pad - t_bbox.x0
-        # 上边超出
-        if t_bbox.y1 > ax_bbox.y1 - pad:
-            dy_px = ax_bbox.y1 - pad - t_bbox.y1
-        # 下边超出
-        if t_bbox.y0 < ax_bbox.y0 + pad:
-            dy_px = ax_bbox.y0 + pad - t_bbox.y0
-
-        if abs(dx_px) < 0.5 and abs(dy_px) < 0.5:
-            continue
-
-        # 像素偏移 → 数据坐标偏移
-        x, y = t.get_position()
-        p0 = inv.transform((0, 0))
-        p1 = inv.transform((dx_px, dy_px))
-        t.set_position((x + p1[0] - p0[0], y + p1[1] - p0[1]))
-
-
-def _auto_fix_overlaps(fig):
-    """自动检测并修复 fig 中所有 axes 上的文字重叠。
-
-    策略：
-    1. 收集每个 ax 上所有可见的 Text 对象（排除轴标签、标题等）
-    2. 计算每对 Text 的 bounding box，检测是否重叠
-    3. 如果有重叠，调用 adjustText 自动推开
-    4. 同时检测图例是否遮挡数据，如果遮挡则移动图例
-    5. 检测 y 轴标签是否被相邻 axes（如分组色条）遮挡
-    """
-    # ★ 3D 轴豁免：adjustText 基于 2D bbox 推文字，对 3D 投影无意义且可能扰乱布局
-    if _has_3d_axes(fig):
-        return
-    try:
-        renderer = fig.canvas.get_renderer()
-    except Exception:
-        # 某些后端没有 renderer，跳过检测
-        return
-
-    for ax in fig.get_axes():
-        # 收集用户添加的 Text 对象（排除轴标签、标题、tick labels）
-        user_texts = []
-        skip_texts = set()
-        # 标记要跳过的系统文本
-        if ax.xaxis.label:
-            skip_texts.add(id(ax.xaxis.label))
-        if ax.yaxis.label:
-            skip_texts.add(id(ax.yaxis.label))
-        if ax.title:
-            skip_texts.add(id(ax.title))
-        for t in ax.get_xticklabels() + ax.get_yticklabels():
-            skip_texts.add(id(t))
-
-        for t in ax.texts:
-            if id(t) in skip_texts:
-                continue
-            if not t.get_visible():
-                continue
-            txt = t.get_text().strip()
-            if not txt:
-                continue
-            user_texts.append(t)
-
-        # ★ 边界裁剪：检测标注/文字是否超出 axes 范围，拉回来
-        # 即使只有 1 个标注也需要检测（帕累托图等场景）
-        if user_texts:
-            _clamp_texts_to_axes(ax, user_texts, renderer)
-
-        if len(user_texts) < 2:
-            continue
-
-        # 检测是否有重叠
-        has_overlap = False
-        bboxes = []
-        for t in user_texts:
-            try:
-                bb = t.get_window_extent(renderer=renderer)
-                bboxes.append(bb)
-            except Exception:
-                bboxes.append(None)
-
-        for i in range(len(bboxes)):
-            if bboxes[i] is None:
-                continue
-            for j in range(i + 1, len(bboxes)):
-                if bboxes[j] is None:
-                    continue
-                if bboxes[i].overlaps(bboxes[j]):
-                    has_overlap = True
-                    break
-            if has_overlap:
-                break
-
-        if not has_overlap:
-            continue
-
-        # 有重叠 → 尝试用 adjustText 修复
-        adjust_text = _ensure_adjustText()
-        if adjust_text:
-            try:
-                adjust_text(user_texts, ax=ax,
-                            force_points=0.3, force_text=0.5,
-                            expand_points=(1.5, 1.5),
-                            arrowprops=dict(arrowstyle='', lw=0))
-            except Exception:
-                # adjustText 失败，尝试简易修复
-                _simple_spread(ax, user_texts, bboxes, renderer)
-        else:
-            _simple_spread(ax, user_texts, bboxes, renderer)
-
-        # adjustText 推开后可能又超出边界，再裁剪一次
-        _clamp_texts_to_axes(ax, user_texts, renderer)
-
-        # 检测图例是否遮挡数据 → 自动挪位
-        # ⛔ 但只在【用户没有显式指定位置】时才动（loc='best' / 未传 loc，matplotlib 记为 _loc==0）。
-        #    以前无条件覆盖，会把脚本里写的 loc='center left' 无声改成 'upper right'：
-        #    作者本来想用图例填补左侧空白，结果图例被挪到右上、左边露出一大片空白，
-        #    而且作者查代码只会看到自己写的 center left，根本对不上（实测踩过，很难排查）。
-        #    bbox_to_anchor 也挡不住（set_loc 之后 anchor 语义随之改变），所以必须在这里判断。
-        legend = ax.get_legend()
-        if legend and legend.get_visible():
-            _user_fixed = True
-            try:
-                # _loc == 0 表示 'best'（含未显式传 loc 的默认情形）→ 视为"作者没指定"
-                _user_fixed = getattr(legend, '_loc', 0) != 0
-            except Exception:
-                _user_fixed = False
-            if not _user_fixed:
-                try:
-                    best_loc = check_legend_overlap(ax)
-                    legend.set_loc(best_loc)  # matplotlib 3.x
-                except (AttributeError, Exception):
-                    try:
-                        legend._loc = {
-                            'upper right': 1, 'upper left': 2,
-                            'lower left': 3, 'lower right': 4,
-                            'center right': 7, 'center left': 6,
-                        }.get(check_legend_overlap(ax), 1)
-                    except Exception:
-                        pass
-
-        # ★ 检测 user texts 是否和 tick labels 重叠（如标注和 X 轴刻度重叠）
-        tick_bboxes = []
-        for t in _onscreen_tick_labels(ax):  # 排除轴外幽灵刻度，避免误判重叠
-            if t.get_visible() and t.get_text().strip():
-                try:
-                    tick_bboxes.append(t.get_window_extent(renderer=renderer))
-                except Exception:
-                    pass
-        for i, ut in enumerate(user_texts):
-            if bboxes[i] is None:
-                continue
-            for tb in tick_bboxes:
-                if bboxes[i].overlaps(tb):
-                    # user text 和 tick label 重叠 → 把 user text 往上推
-                    overlap_y = tb.y1 - bboxes[i].y0 + 4
-                    inv = ax.transData.inverted()
-                    p0 = inv.transform((0, 0))
-                    p1 = inv.transform((0, overlap_y))
-                    dy = p1[1] - p0[1]
-                    x, y = ut.get_position()
-                    ut.set_position((x, y + abs(dy)))
-                    try:
-                        bboxes[i] = ut.get_window_extent(renderer=renderer)
-                    except Exception:
-                        pass
-                    break
-
-    # ★ 也处理 annotate 创建的标注（ax.texts 不包含 annotate 的文本部分）
-    for ax in fig.get_axes():
-        annots = [child for child in ax.get_children()
-                  if hasattr(child, 'xyann') or (hasattr(child, 'anncoords') and hasattr(child, 'get_text'))]
-        if not annots:
-            # annotate 创建的对象在 ax.texts 中（matplotlib 3.x），已经处理过
-            # 但也检查 ax.patches 中的 FancyArrowPatch
-            pass
-
-    # ★ 检测 y 轴标签是否被相邻 axes（如分组色条）遮挡
-    _fix_ylabel_overlap(fig, renderer)
-
-
-def _fix_ylabel_overlap(fig, renderer):
-    """检测并修复 y 轴标签被相邻 axes 遮挡的问题（如聚类热力图的左侧色条）。
-    
-    三阶段策略：
-    1. 检测 y label 是否被左侧 axes（色条/树状图）覆盖 → 把左侧 axes 往左推
-    2. 推到 figure 边缘还不够 → 自动截断超长 y label 文本（保留前 N 字 + …）
-    3. 仍溢出 figure 左边界 → 减小 y label 字号
-    """
-    all_axes = fig.get_axes()
-    if len(all_axes) < 2:
-        # 单 axes 也可能有 y label 溢出 figure 边界的问题
-        for ax in all_axes:
-            _truncate_ylabels_if_overflow(ax, fig, renderer)
-        return
-    for ax in all_axes:
-        ytick_labels = _onscreen_tick_labels(ax, which='y')  # 排除轴外幽灵刻度
-        if not ytick_labels:
-            continue
-        # 获取 y 轴标签的最左边界（display coords）
-        leftmost = None
-        for lbl in ytick_labels:
-            if not lbl.get_visible() or not lbl.get_text().strip():
-                continue
-            try:
-                bb = lbl.get_window_extent(renderer=renderer)
-                if leftmost is None or bb.x0 < leftmost:
-                    leftmost = bb.x0
-            except Exception:
-                continue
-        if leftmost is None:
-            continue
-        # 检查是否有其他 axes 的区域覆盖了这些标签
-        ax_bbox_disp = ax.get_window_extent(renderer=renderer)
-        pushed = False
-        for other_ax in all_axes:
-            if other_ax is ax:
-                continue
-            other_bbox = other_ax.get_window_extent(renderer=renderer)
-            # ⛔ 同行约束（修复 bug：多行网格子图被误判为"左侧遮挡物"）
-            # 之前漏判：只看 x 横向重叠，不看 y 是否同行 → 同列上下堆叠子图会被误推，
-            # 导致左上角子图(a) 被左下角(d)的"遮挡判定"挤压变窄+左移。
-            # 现在要求：竖直方向必须实质重叠（重叠 > 较小者高度的 50%）才算"左侧遮挡物"。
-            overlap_top = min(ax_bbox_disp.y1, other_bbox.y1)
-            overlap_bot = max(ax_bbox_disp.y0, other_bbox.y0)
-            v_overlap = overlap_top - overlap_bot
-            min_h = min(ax_bbox_disp.height, other_bbox.height)
-            if v_overlap <= 0 or (min_h > 0 and v_overlap < min_h * 0.5):
-                # 不在同一行（竖直无实质重叠）→ 跳过，不算遮挡物
-                continue
-            # 如果其他 axes 在当前 axes 左侧且与标签区域重叠
-            if other_bbox.x1 > leftmost and other_bbox.x0 < ax_bbox_disp.x0:
-                # 计算需要左移的量（figure fraction）
-                fig_width = fig.get_window_extent(renderer=renderer).width
-                overlap_px = other_bbox.x1 - leftmost + 8  # 8px 额外间距
-                shift = overlap_px / fig_width
-                # 把遮挡的 axes 往左推（但不能推到 figure 外）
-                pos = other_ax.get_position()
-                new_x0 = max(0.01, pos.x0 - shift)
-                new_width = pos.width - (pos.x0 - new_x0) if new_x0 < pos.x0 else pos.width
-                other_ax.set_position([new_x0, pos.y0, max(0.01, new_width), pos.height])
-                pushed = True
-        # ★ 推完仍可能溢出 figure 左边界 → 触发截断/缩字号兜底
-        _truncate_ylabels_if_overflow(ax, fig, renderer)
-
-
-def _truncate_ylabels_if_overflow(ax, fig, renderer):
-    """兜底：当 y label 溢出 figure 左边界（x0 < 0）时，自动截断文本 + 减小字号。"""
-    try:
-        fig_bbox = fig.get_window_extent(renderer=renderer)
-    except Exception:
-        return
-
-    # 只看真正会绘制的刻度：轴外的"幽灵刻度"（log 轴常见）位置远在画布左侧，
-    # 会被误判成溢出，进而把本来放得下的 y 标签截断成省略号并缩小字号
-    ytick_labels = [t for t in _onscreen_tick_labels(ax, which='y')
-                    if t.get_visible() and t.get_text().strip()]
-    if not ytick_labels:
-        return
-
-    # 第一步：检测是否溢出 figure 左边界
-    overflow_px = 0
-    for lbl in ytick_labels:
-        try:
-            bb = lbl.get_window_extent(renderer=renderer)
-            if bb.x0 < fig_bbox.x0:
-                overflow_px = max(overflow_px, fig_bbox.x0 - bb.x0)
-        except Exception:
-            continue
-    if overflow_px <= 0:
-        return
-
-    # 第二步：尝试截断超长文本（保留前 N 字 + …）
-    # 估算可用字符数：原始最长文本字符数 - 溢出像素 / 单字符宽度
-    max_text_len = max((len(lbl.get_text()) for lbl in ytick_labels), default=0)
-    if max_text_len > 8:
-        # 估算单字符宽度（用最长标签 / 字符数）
-        longest_lbl = max(ytick_labels, key=lambda t: len(t.get_text()))
-        try:
-            longest_bb = longest_lbl.get_window_extent(renderer=renderer)
-            char_width = longest_bb.width / max(len(longest_lbl.get_text()), 1)
-            # 需要砍掉的字符数 = 溢出像素 / 单字符宽度 + 1 字（… 占位）
-            chars_to_cut = int(overflow_px / max(char_width, 1)) + 1
-            new_max_len = max(6, max_text_len - chars_to_cut)
-            # 整批 set_yticklabels（单 set_text 在重绘时会被 formatter 覆盖）
-            current_fontsize = ytick_labels[0].get_fontsize()
-            new_texts = []
-            for lbl in ytick_labels:
-                txt = lbl.get_text()
-                if len(txt) > new_max_len:
-                    new_texts.append(txt[: new_max_len - 1] + '…')
-                else:
-                    new_texts.append(txt)
-            try:
-                ax.set_yticks(ax.get_yticks())
-                ax.set_yticklabels(new_texts, fontsize=current_fontsize)
-            except Exception:
-                for lbl, new_txt in zip(ytick_labels, new_texts):
-                    lbl.set_text(new_txt)
-        except Exception:
-            pass
-
-    # 第三步：再检查仍溢出 → 减字号
-    try:
-        still_overflow = False
-        for lbl in ytick_labels:
-            bb = lbl.get_window_extent(renderer=renderer)
-            if bb.x0 < fig_bbox.x0:
-                still_overflow = True
-                break
-        if still_overflow:
-            current_size = ytick_labels[0].get_fontsize()
-            new_size = max(6, current_size - 1)
-            for lbl in ytick_labels:
-                lbl.set_fontsize(new_size)
-    except Exception:
-        pass
-
-
 def auto_truncate_yticklabels(ax, max_chars=20, suffix='…'):
     """公开 API：主动截断超长 y tick labels（配方代码可调用，防止 y 轴遮挡）。
     
@@ -1414,40 +783,6 @@ def auto_truncate_yticklabels(ax, max_chars=20, suffix='…'):
         for lbl, new_txt in zip(labels, new_texts):
             lbl.set_text(new_txt)
 
-
-def _simple_spread(ax, texts, bboxes, renderer):
-    """简易重叠修复：把重叠的文本沿 y 方向推开。"""
-    if not texts or not bboxes:
-        return
-
-    # 按 y 坐标排序
-    indexed = [(i, t) for i, t in enumerate(texts) if bboxes[i] is not None]
-    indexed.sort(key=lambda x: x[1].get_position()[1])
-
-    for k in range(1, len(indexed)):
-        i_curr = indexed[k][0]
-        i_prev = indexed[k - 1][0]
-        bb_curr = bboxes[i_curr]
-        bb_prev = bboxes[i_prev]
-        if bb_curr is None or bb_prev is None:
-            continue
-
-        if bb_prev.overlaps(bb_curr):
-            # 计算需要的最小偏移（像素）
-            overlap_y = bb_prev.y1 - bb_curr.y0 + 2  # 2px padding
-            # 转换为数据坐标
-            inv = ax.transData.inverted()
-            p0 = inv.transform((0, 0))
-            p1 = inv.transform((0, overlap_y))
-            dy = p1[1] - p0[1]
-            # 把当前文本往上推
-            x, y = texts[i_curr].get_position()
-            texts[i_curr].set_position((x, y + dy))
-            # 更新 bbox
-            try:
-                bboxes[i_curr] = texts[i_curr].get_window_extent(renderer=renderer)
-            except Exception:
-                pass
 
 # 公开别名，供外部脚本调用
 save_fig = _save
@@ -1746,316 +1081,4 @@ def heatmap(data, labels=None, output='figures/fig_heatmap.pdf', title=None,
             ax.set_yticks(range(len(labels)))
             ax.set_yticklabels(labels)
 
-    _save(fig, output)
-
-
-def forest_plot(coefs, ci_lower, ci_upper, labels, output='figures/fig_forest.pdf',
-                figsize=(6, None), xlabel='Coefficient'):
-    """回归系数森林图（带置信区间）。
-    
-    Args:
-        coefs: 系数数组
-        ci_lower: 置信区间下界
-        ci_upper: 置信区间上界
-        labels: 变量名列表
-        output: 输出路径
-    """
-    plt = _get_plt()
-    setup_style()
-    n = len(coefs)
-    if figsize[1] is None:
-        figsize = (figsize[0], max(3, n * 0.4 + 1))
-    fig, ax = plt.subplots(1, 1, figsize=figsize)
-
-    y_pos = np.arange(n)
-    xerr = [np.array(coefs) - np.array(ci_lower), np.array(ci_upper) - np.array(coefs)]
-
-    ax.errorbar(coefs, y_pos, xerr=xerr, fmt='o', color=COLORS['primary'],
-                ecolor=COLORS['gray'], elinewidth=1.5, capsize=3, markersize=5)
-    ax.axvline(x=0, color=COLORS['accent'], linestyle='--', linewidth=0.8, alpha=0.7)
-    ax.set_yticks(y_pos)
-    ax.set_yticklabels(labels)
-    ax.set_xlabel(xlabel)
-    ax.invert_yaxis()
-
-    _save(fig, output)
-
-
-def trend_plot(x, y, output='figures/fig_trend.pdf', ci=None,
-               xlabel='', ylabel='', label=None, figsize=(7, 4)):
-    """时间趋势图（可选置信带）。
-    
-    Args:
-        x: x 轴数据
-        y: y 轴数据
-        ci: (lower, upper) 置信区间元组，可选
-        output: 输出路径
-    """
-    plt = _get_plt()
-    setup_style()
-    fig, ax = plt.subplots(1, 1, figsize=figsize)
-
-    ax.plot(x, y, color=COLORS['primary'], linewidth=1.5, label=label)
-    if ci is not None:
-        ax.fill_between(x, ci[0], ci[1], alpha=0.15, color=COLORS['secondary'])
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel(ylabel)
-    if label:
-        ax.legend()
-
-    _save(fig, output)
-
-
-def bar_compare(categories, values_dict, output='figures/fig_bar.pdf',
-                ylabel='', figsize=(7, 4), show_values=True):
-    """分组柱状图（带误差棒，多组对比）。
-    
-    Args:
-        categories: 类别列表 ['A', 'B', 'C']
-        values_dict: {'方法1': [v1, v2, v3], '方法2': [v1, v2, v3]}
-                     或 {'方法1': {'values': [...], 'errors': [...]}}
-        output: 输出路径
-    """
-    plt = _get_plt()
-    setup_style()
-    fig, ax = plt.subplots(1, 1, figsize=figsize)
-
-    n_groups = len(categories)
-    n_bars = len(values_dict)
-    bar_width = 0.8 / n_bars
-    x = np.arange(n_groups)
-
-    for i, (name, data) in enumerate(values_dict.items()):
-        if isinstance(data, dict):
-            vals = data['values']
-            errs = data.get('errors', None)
-        else:
-            vals = data
-            errs = None
-        offset = (i - n_bars / 2 + 0.5) * bar_width
-        bars = ax.bar(x + offset, vals, bar_width, label=name,
-                       color=PALETTE[i % len(PALETTE)], yerr=errs,
-                       capsize=3, error_kw={'linewidth': 0.8})
-        if show_values:
-            for bar, val in zip(bars, vals):
-                ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.01 * max(vals),
-                        f'{val:.2f}', ha='center', va='bottom', fontsize=7)
-
-    ax.set_xticks(x)
-    ax.set_xticklabels(categories)
-    ax.set_ylabel(ylabel)
-    ax.legend()
-
-    _save(fig, output)
-
-
-def distribution_plot(data, output='figures/fig_dist.pdf', xlabel='', bins=30, figsize=(6, 4)):
-    """核密度 + 直方图。"""
-    plt = _get_plt()
-    sns = _get_sns()
-    setup_style()
-    fig, ax = plt.subplots(1, 1, figsize=figsize)
-
-    if sns:
-        sns.histplot(data, bins=bins, kde=True, color=COLORS['secondary'], ax=ax,
-                     edgecolor='white', linewidth=0.5)
-    else:
-        ax.hist(data, bins=bins, density=True, color=COLORS['secondary'],
-                edgecolor='white', linewidth=0.5, alpha=0.7)
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel('Density')
-
-    _save(fig, output)
-
-
-def scatter_plot(x, y, output='figures/fig_scatter.pdf', xlabel='', ylabel='',
-                 hue=None, fit_line=True, figsize=(6, 5)):
-    """散点图（可选回归线）。"""
-    plt = _get_plt()
-    setup_style()
-    fig, ax = plt.subplots(1, 1, figsize=figsize)
-
-    if hue is not None:
-        for i, (name, mask) in enumerate(hue.items()):
-            ax.scatter(np.array(x)[mask], np.array(y)[mask], s=20, alpha=0.6,
-                       color=PALETTE[i % len(PALETTE)], label=name)
-        ax.legend()
-    else:
-        ax.scatter(x, y, s=20, alpha=0.6, color=COLORS['secondary'])
-
-    if fit_line:
-        z = np.polyfit(x, y, 1)
-        p = np.poly1d(z)
-        x_line = np.linspace(min(x), max(x), 100)
-        ax.plot(x_line, p(x_line), color=COLORS['accent'], linewidth=1, linestyle='--')
-
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel(ylabel)
-
-    _save(fig, output)
-
-
-def residual_diagnostic(y_true, y_pred, output='figures/fig_residual.pdf', figsize=(10, 8)):
-    """残差诊断四图（QQ图、残差散点、残差直方图、拟合值vs残差）。"""
-    plt = _get_plt()
-    setup_style()
-    fig, axes = plt.subplots(2, 2, figsize=figsize)
-    residuals = np.array(y_true) - np.array(y_pred)
-    std_resid = (residuals - residuals.mean()) / residuals.std()
-
-    # 1. 残差 vs 拟合值
-    ax = axes[0, 0]
-    ax.scatter(y_pred, residuals, s=15, alpha=0.5, color=COLORS['secondary'])
-    ax.axhline(y=0, color=COLORS['accent'], linestyle='--', linewidth=0.8)
-    ax.set_xlabel('Fitted Values')
-    ax.set_ylabel('Residuals')
-
-    # 2. QQ 图
-    ax = axes[0, 1]
-    sorted_resid = np.sort(std_resid)
-    n = len(sorted_resid)
-    theoretical = np.array([_norm_ppf((i + 0.5) / n) for i in range(n)])
-    ax.scatter(theoretical, sorted_resid, s=15, alpha=0.5, color=COLORS['secondary'])
-    lim = max(abs(theoretical.min()), abs(theoretical.max())) * 1.1
-    ax.plot([-lim, lim], [-lim, lim], color=COLORS['accent'], linestyle='--', linewidth=0.8)
-    ax.set_xlabel('Theoretical Quantiles')
-    ax.set_ylabel('Standardized Residuals')
-
-    # 3. 残差直方图
-    ax = axes[1, 0]
-    ax.hist(residuals, bins=25, color=COLORS['secondary'], edgecolor='white', linewidth=0.5, density=True)
-    ax.set_xlabel('Residuals')
-    ax.set_ylabel('Density')
-
-    # 4. Scale-Location
-    ax = axes[1, 1]
-    ax.scatter(y_pred, np.sqrt(np.abs(std_resid)), s=15, alpha=0.5, color=COLORS['secondary'])
-    ax.set_xlabel('Fitted Values')
-    ax.set_ylabel('sqrt(|Standardized Residuals|)')
-
-    fig.tight_layout()
-    _save(fig, output)
-
-
-def _norm_ppf(p):
-    """简易正态分位数函数（避免依赖 scipy）。"""
-    # Abramowitz and Stegun approximation
-    if p <= 0:
-        return -4.0
-    if p >= 1:
-        return 4.0
-    if p == 0.5:
-        return 0.0
-    if p > 0.5:
-        return -_norm_ppf(1 - p)
-    t = np.sqrt(-2 * np.log(p))
-    c0, c1, c2 = 2.515517, 0.802853, 0.010328
-    d1, d2, d3 = 1.432788, 0.189269, 0.001308
-    return -(t - (c0 + c1 * t + c2 * t ** 2) / (1 + d1 * t + d2 * t ** 2 + d3 * t ** 3))
-
-
-def multi_line_plot(x, ys, labels, output='figures/fig_multi_line.pdf',
-                    xlabel='', ylabel='', figsize=(7, 4)):
-    """多条线对比图（训练曲线、消融实验等）。
-
-    Args:
-        x: x 轴数据
-        ys: list of y 数据序列
-        labels: 每条线的标签
-        output: 输出路径
-    """
-    plt = _get_plt()
-    setup_style()
-    fig, ax = plt.subplots(1, 1, figsize=figsize)
-
-    for i, (y, label) in enumerate(zip(ys, labels)):
-        ax.plot(x, y, color=PALETTE[i % len(PALETTE)], linewidth=1.5, label=label)
-
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel(ylabel)
-    ax.legend()
-    _save(fig, output)
-
-
-def box_plot(data_dict, output='figures/fig_box.pdf', ylabel='', figsize=(7, 4)):
-    """箱线图（分布对比）。
-
-    Args:
-        data_dict: {'方法A': [values], '方法B': [values]}
-        output: 输出路径
-    """
-    plt = _get_plt()
-    setup_style()
-    fig, ax = plt.subplots(1, 1, figsize=figsize)
-
-    labels = list(data_dict.keys())
-    data = list(data_dict.values())
-
-    bp = ax.boxplot(data, labels=labels, patch_artist=True, widths=0.5,
-                    medianprops={'color': COLORS['dark'], 'linewidth': 1.5})
-    for i, patch in enumerate(bp['boxes']):
-        patch.set_facecolor(PALETTE_LIGHT[i % len(PALETTE_LIGHT)])
-        patch.set_edgecolor(PALETTE[i % len(PALETTE)])
-
-    ax.set_ylabel(ylabel)
-    _save(fig, output)
-
-
-def radar_plot(categories, values_dict, output='figures/fig_radar.pdf', figsize=(6, 6)):
-    """雷达图（多维度对比）。
-
-    Args:
-        categories: 维度名列表 ['Accuracy', 'Speed', 'Memory', ...]
-        values_dict: {'方法A': [v1, v2, ...], '方法B': [v1, v2, ...]}
-        output: 输出路径
-    """
-    plt = _get_plt()
-    setup_style()
-    fig, ax = plt.subplots(1, 1, figsize=figsize, subplot_kw=dict(polar=True))
-
-    n = len(categories)
-    angles = np.linspace(0, 2 * np.pi, n, endpoint=False).tolist()
-    angles += angles[:1]  # 闭合
-
-    for i, (name, vals) in enumerate(values_dict.items()):
-        values = list(vals) + [vals[0]]  # 闭合
-        ax.plot(angles, values, 'o-', linewidth=1.5, color=PALETTE[i % len(PALETTE)], label=name)
-        ax.fill(angles, values, alpha=0.1, color=PALETTE[i % len(PALETTE)])
-
-    ax.set_xticks(angles[:-1])
-    ax.set_xticklabels(categories)
-    ax.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1))
-    _save(fig, output)
-
-
-def subplot_grid(plot_funcs, nrows, ncols, output='figures/fig_grid.pdf',
-                 figsize=None, titles=None):
-    """多面板子图网格。
-
-    Args:
-        plot_funcs: list of callables, 每个接受 (ax,) 参数
-        nrows, ncols: 网格尺寸
-        output: 输出路径
-        titles: 每个子图的标题列表（可选）
-    """
-    plt = _get_plt()
-    setup_style()
-    if figsize is None:
-        figsize = (4 * ncols, 3.5 * nrows)
-    fig, axes = plt.subplots(nrows, ncols, figsize=figsize)
-    if nrows == 1 and ncols == 1:
-        axes = np.array([axes])
-    axes_flat = axes.flatten()
-
-    for i, func in enumerate(plot_funcs):
-        if i < len(axes_flat):
-            func(axes_flat[i])
-            if titles and i < len(titles):
-                axes_flat[i].set_title(titles[i], fontsize=10)
-
-    # 隐藏多余的子图
-    for j in range(len(plot_funcs), len(axes_flat)):
-        axes_flat[j].set_visible(False)
-
-    fig.tight_layout()
     _save(fig, output)

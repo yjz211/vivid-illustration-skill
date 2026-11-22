@@ -1,4 +1,4 @@
-# Existing plotting/helper imports; use the host environment, portable Python environment.
+# Plotting and helper runtime dependencies; use the host or portable Python environment.
 # Core quantitative figures and data input
 numpy
 pandas
@@ -6,27 +6,29 @@ scipy
 matplotlib
 seaborn
 scikit-learn
-statsmodels
-sympy
+scikit-image
 networkx
 Pillow
 adjustText>=1.4.0
 openpyxl
-# Existing PDF preview/layout and document helpers
+
+# Interactive / 3D / polar / synthetic-data figure recipes
+plotly
+kaleido
+pycirclize
+Faker
+
+# PDF preview and layout inspection
 PyMuPDF
-pypdf
-PyPDF2
-pdf2image
-python-docx
-# Existing spatial recipes
+
+# Spatial recipes
 geopandas
 libpysal
 esda
-# Existing SVG renderer (Chrome fallback is also supported)
-CairoSVG
 
-# HTML rendering / geometry checks with an existing Chrome executable
+# SVG and HTML rendering / geometry checks
+CairoSVG
 playwright
 
-# Native architecture assets and editable PowerPoint export.
+# Native architecture assets and editable PowerPoint export
 -r requirements-architecture.txt

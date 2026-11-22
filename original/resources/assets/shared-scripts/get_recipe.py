@@ -18,7 +18,7 @@ import sys
 import tempfile
 import ast
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from template_sources import COMPLETE_TEMPLATES, complete_source, digest, materialize, preflight, workspace_for
+from template_sources import COMPLETE_TEMPLATES, complete_source, digest, materialize, package_root, preflight, workspace_for
 
 HEADER = re.compile(r'^## (\d+)\.\s+([^\n]+)$', re.MULTILINE)
 ID_REF = re.compile(r'\brecipe:([a-z][a-z0-9_]*\.[a-z][a-z0-9_]*)\b')
@@ -112,6 +112,32 @@ class Recipes:
                       blocks=mapping['blocks'], requiredInputs=mapping.get('requiredInputs', []))
         return code, source
 
+    def _screenshot_sources(self):
+        if not hasattr(self, '_cached_screenshot_sources'):
+            candidates = [self.root / 'screenshot_skill_sources.json']
+            pkg = package_root(self.workspace)
+            if pkg is not None:
+                candidates.append(pkg / 'original/resources/assets/shared-scripts/screenshot_skill_sources.json')
+            source_path = next((p for p in candidates if p.is_file()), None)
+            if source_path is None:
+                raise ValueError('Missing screenshot_skill_sources.json in skill runtime')
+            self._cached_screenshot_sources = json.loads(source_path.read_text(encoding='utf-8'))
+        return self._cached_screenshot_sources
+
+    def working_script(self, key, variant='main'):
+        orig_code, orig_source = self.script(key, variant)
+        clean_key = key.removeprefix('recipe:')
+        if clean_key.startswith('screenshot.') and variant == 'main':
+            mapping = self._screenshot_sources()
+            if clean_key not in mapping:
+                raise ValueError('Missing working script for screenshot recipe: ' + clean_key)
+            code = mapping[clean_key]
+            if not code.endswith('\n'):
+                code += '\n'
+            ast.parse(code)
+            return code, dict(orig_source, codeSha256=digest(code), originCodeSha256=orig_source['codeSha256'])
+        return orig_code, orig_source
+
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
@@ -153,7 +179,7 @@ def main(argv=None):
                 print(json.dumps(recipes.entries[key.removeprefix('recipe:')].get('scripts', {}), ensure_ascii=False, indent=2))
                 return 0
             jobs = [(key, args.script)]
-        prepared = [(path, *recipes.script(key, args.variant)) for key, path in jobs]
+        prepared = [(path, *recipes.working_script(key, args.variant)) for key, path in jobs]
         for path, code, source in prepared: preflight(path, code, source, args.workspace)
         for path, code, source in prepared:
             print(json.dumps(materialize(path, code, source, args.workspace), ensure_ascii=False))
